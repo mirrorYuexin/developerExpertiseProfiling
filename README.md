@@ -8,9 +8,9 @@
 
 ## Data
 
-1. Common user of Stackoverflow and Github: users.csv
-2. Test data: testdata.csv
-3. Expertise Profiling Result:
+### 1. Common user of Stackoverflow and Github: users.sql, users.csv
+### 2. Test data: testdata.csv
+
 
 
 
@@ -27,7 +27,7 @@
 
 ### 3. Graph-Based Developer Expertise: Profiling Section III.D in paper
 #### Developer network constructing: get_user_relation.py
-#### Expertise Profiling based on the Developer Network:topic-sentitive_pagerank.py 
+#### Expertise Profiling based on the Developer Network: topic-sentitive_pagerank.py 
 
 ###4. Evaluating: Section IV in paper
 #### evaluate.py
