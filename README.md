@@ -1,7 +1,7 @@
 # DeveloperExpertiseProfiling
 
 ## Contents
-This project contains key code and data in "A Collaboration-Aware Approach to Profiling Developer Expertise with Cross-Community Data".
+### This project contains key code and data in "A Collaboration-Aware Approach to Profiling Developer Expertise with Cross-Community Data".
 
 
 
