@@ -1,0 +1,211 @@
+# coding:utf-8
+from __future__ import division
+
+import random
+
+import pandas as pd
+import numpy as np
+from scipy.sparse import csc_matrix, csr_matrix
+
+from user_sort.my.get_test_result import get_user_tag
+from user_sort.mysql.session import Session1 as session1
+from user_sort.mysql.session import Session2_r as session2_r
+from user_sort.mysql.models import So_Github_Users, So_User_Relation, Github_User_Relation, So_User_Tag, User_Tag, Tags, \
+    So_Test_Question_Tag, So_Test2_Question_Tag, User_Tag_2, Github_User_Relation2, Github_User_Relation3, \
+    Github_User_Relation6, So_User_Relation2
+from time import time
+import copy
+
+def Generate_Node_Index_Map():
+    index2node = dict()
+    node2index = dict()
+    users = session2_r.query(So_Github_Users.so_user_id).all()
+    n = 0
+    for u in users:
+        node2index[u.so_user_id] = n
+        index2node[n] = u.so_user_id
+        n += 1
+    return n, node2index, index2node
+
+
+def PageRank(M, alpha, v_temp, p_temp, num_iter, threshlod, index2node, num_candidates, f, tag_id, user_tag):
+    v = copy.deepcopy(v_temp)
+    p = copy.deepcopy(p_temp)
+    i = 0
+    temp = alpha * M * p + (1-alpha) * v
+    deviation = np.sum(abs(p - temp))
+    while i < num_iter and deviation > threshlod:
+        p = temp
+        temp = alpha * M * p + (1-alpha) * v
+        deviation = np.sum(abs(p - temp))
+        i+=1
+    print str(i)+"轮"
+    result = {}
+    for index, prob in enumerate(p):
+        result[index2node[index]] = prob
+    for r in result:
+        if r in user_tag and tag_id in user_tag[r]:
+            f.write(str(r)+","+str(tag_id)+","+str(result[r])+"\r\n")
+    f.flush()
+
+
+
+
+def Generate_Transfer_Matrix_Map(N, p, node2index, a, b, tag_id):
+
+    G = {}
+    for n in range(N):
+        G[n] = {}
+
+    #so
+    so_relation_result = session2_r.query(So_User_Relation).filter(So_User_Relation.tag == tag_id).all()
+    for relation in so_relation_result:
+        if relation.asker != relation.answerer:
+            asker = node2index[relation.asker]
+            answerer = node2index[relation.answerer]
+            # answer
+            if answerer in G[asker]:
+                G[asker][answerer] += a * relation.weight
+            else:
+                G[asker][answerer] = a * relation.weight
+            #help
+            if p[answerer] > p[asker]:
+                if asker in G[answerer]:
+                    G[answerer][asker] += b * (1 - p[asker] / p[answerer]) * relation.weight
+                else:
+                    G[answerer][asker] = b * (1 - p[asker] / p[answerer]) * relation.weight
+
+
+    # github
+    # reviewer
+    gh_relation_result = session2_r.query(Github_User_Relation6).filter(Github_User_Relation6.tag == tag_id).all()
+    for relation in gh_relation_result:
+        if relation.author != relation.reviewer:
+            author = node2index[relation.author]
+            reviewer = node2index[relation.reviewer]
+            if reviewer in G[author]:
+                G[author][reviewer] += a * relation.weight
+            else:
+                G[author][reviewer] = a * relation.weight
+    #cooperate
+    gh_relation_result = session2_r.query(Github_User_Relation).filter(Github_User_Relation.tag == tag_id).all()
+    for relation in gh_relation_result:
+        user1 = node2index[relation.user1]
+        user2 = node2index[relation.user2]
+        if p[user1] < p[user2]:
+            if user1 in G[user2]:
+                G[user2][user1] +=  b * (1 - p[user1] / p[user2]) * relation.weight
+            else:
+                G[user2][user1] =  b * (1 - p[user1] / p[user2]) * relation.weight
+        elif p[user1] > p[user2]:
+            if user2 in G[user1]:
+                G[user1][user2] += b * (1 - p[user2] / p[user1]) * relation.weight
+            else:
+                G[user1][user2] =  b * (1 - p[user2] / p[user1]) * relation.weight
+    return G
+
+
+def Generate_Transfer_Matrix(G, n):
+
+    weightsum = {}
+    for node1 in G.keys():
+        weight=0
+        for node2 in G[node1]:
+            weight = weight + G[node1][node2]
+        weightsum[node1] = weight
+
+    indiceslist = []
+    indptrlist = []
+    datalist = []
+
+    i = 0
+    indptrlist.append(i)
+    for node1 in G.keys():
+        map = {}
+        for node2 in G[node1]:
+            map[node2] = G[node1][node2] / weightsum[node1]
+        templist = sorted(map.items(), key=lambda item: item[0])
+        for node in templist:
+            indiceslist.append(node[0])
+            datalist.append(node[1])
+        i = len(indiceslist)
+        indptrlist.append(i)
+
+
+    indices = np.array(indiceslist)
+    indptr = np.array(indptrlist)
+    data = np.array(datalist)
+    M = csc_matrix((data, indices, indptr), shape=(n, n))
+    return M
+
+
+def Generate_Restart_Vector(n, tag_id, node2index):
+    sum = 0
+    v = np.zeros(n)
+    result = session2_r.query(User_Tag_2.user_Id, User_Tag_2.score).filter(User_Tag_2.tag_Id == tag_id).all()
+    for r in result:
+        if r.score > 0:
+            v[node2index[r.user_Id]] = r.score
+            sum += r.score
+    for i in range(0,n):
+        v[i] = v[i]/sum
+    return v
+
+
+
+def main_do():
+
+    alpha = 0.9
+    num_iter = 200
+    threshold = 0.0000000001
+    num_candidates = 10
+
+    a = [0.5,0.45,0.4,0.35,0.3,0.25,0.2,0.15,0.1,0.05,0]
+    b = [0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5]
+
+    tag_threshold = 5000
+    tagset = set()
+    tags = session1.query(Tags).filter(Tags.Count > tag_threshold).all()
+    for tag in tags:
+        tagset.add(tag.Id)
+
+    tagset1 = set()
+    tags = session2_r.query(So_Test_Question_Tag.tag_Id).distinct()
+    for tag in tags:
+        if tag.tag_Id in tagset:
+            tagset1.add(tag.tag_Id)
+    tags = session2_r.query(So_Test2_Question_Tag.tag_Id).distinct()
+    for tag in tags:
+        if tag.tag_Id in tagset:
+            tagset1.add(tag.tag_Id)
+    taglist = list(tagset1)
+    print len(taglist)
+
+    cache_file = "/sdpdata1/python/project/user_sort/user_sort/result/test/user_tag_cache_file.csv"
+    user_tag = get_user_tag(cache_file,0)
+
+    filepath = "/sdpdata1/python/project/user_sort/user_sort/result/so_github/pagerank/final/result2/result"
+    for i in range(3):
+        for j in range(5):
+            file_temp = filepath + str(i) +"_" + str(j)+"_9.csv"
+            print "***************************",file_temp,"***************************"
+            print a[i], b[i], j
+            f = open(file_temp, 'a')
+            tagnum = 0
+            time1 = time()
+            N, node2index, index2node = Generate_Node_Index_Map()
+            for tag_id in taglist:
+                print "tag_id:"+str(tag_id)+" start!"
+                start = time()
+                tagnum += 1
+                v = p = Generate_Restart_Vector(N, tag_id, node2index)
+                G = Generate_Transfer_Matrix_Map(N, p, node2index, a[i], b[i], tag_id, j)
+                M = Generate_Transfer_Matrix(G, N)
+                PageRank(M, alpha, v, p, num_iter, threshold, index2node, num_candidates, f, tag_id, user_tag)
+                end = time()
+                print "第"+str(tagnum)+"个标签finish:"+str(end-start)+"s"
+            f.close()
+            time2 = time()
+            print "totaltime:" + str(time2 - time1) + "s"
+if __name__ == '__main__':
+    main_do()
