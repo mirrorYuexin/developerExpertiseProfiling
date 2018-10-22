@@ -1,7 +1,8 @@
 # DeveloperExpertiseProfiling
 
 ## Contents
-### This project contains key code and data in "A Collaboration-Aware Approach to Profiling Developer Expertise with Cross-Community Data".
+#### This project contains key code and data in "A Collaboration-Aware Approach to Profiling Developer Expertise with Cross-Community Data".
+
 
 
 
@@ -10,6 +11,7 @@
 1. Common user of Stackoverflow and Github: users.csv
 2. Test data: testdata.csv
 3. Expertise Profiling Result:
+
 
 
 
