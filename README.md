@@ -31,7 +31,7 @@
 #### Developer network constructing: get_user_relation.py
 #### Expertise Profiling based on the Developer Network: topic-sentitive_pagerank.py 
 
-###4. Evaluating: Section IV in paper
+### 4. Evaluating: Section IV in paper
 #### evaluate.py
 
 
