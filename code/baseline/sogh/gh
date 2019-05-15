@@ -1,0 +1,189 @@
+# coding:utf-8
+from __future__ import division
+
+import os
+import cPickle as pickle
+
+import datetime
+
+from user_sort.mysql.models import So_User_Tag, So_Question_Difficulty, So_QuestionTag, Answers, So_Answers, \
+    So_Github_Users
+from user_sort.mysql.session import Session2_r as session2_r
+from user_sort.mysql.session import Session1 as session1
+
+'''
+对seke论文的so部分的简单实现
+用答案score代替答案得分
+'''
+def get_user_ability(cache_file, file, type):
+    # 计算用户能力,保存在file中; cache_file为保存user_tag的文件
+    # score归一化
+    print ("file_exists:", os.path.exists(cache_file))
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r') as data:
+            user_tag=pickle.load(data)
+            user_tag_map = {}
+            tag_set = set()
+            user_set = set()
+            for u in user_tag:
+                user_tag_map[u] = {}
+                user_set.add(u)
+                for t in user_tag[u]:
+                    user_tag_map[u][t] = [0,0]
+                    tag_set.add(t)
+            # print len(user_set),len(tag_set)
+
+            # 查出问题和对应的tagid，存入question_tag_map
+            question_tag_map = {}
+            start_id = 0
+            end_id = 500000
+            final_id = 40000000
+            step = 500000
+            num = 0
+            while start_id < final_id:
+                print "start_id:" + str(start_id) + "     end_id:" + str(end_id) + "     final_id:" + str(final_id)
+                qt_result = session2_r.query(So_QuestionTag).filter(So_QuestionTag.q_Id >= start_id,So_QuestionTag.q_Id < end_id).all()
+                for qt in qt_result:
+                    num += 1
+                    if qt.tag_Id in tag_set:
+                        q = qt.q_Id
+                        if q in question_tag_map:
+                            question_tag_map[q].add(qt.tag_Id)
+                        else:
+                            question_tag_map[q] = set([qt.tag_Id])
+                start_id = end_id
+                end_id = end_id + step
+            print "question_tag_map end:"+str(num)
+
+
+            # 查出这些用户回答的答案
+            user_list = list(user_set)
+            answers = session2_r.query(So_Answers.ParentId, So_Answers.Score, So_Answers.OwnerUserId).filter(So_Answers.OwnerUserId.in_(user_list)).all()
+            num = 0
+            for a in answers:
+                num += 1
+                q_id = a.ParentId
+                if  q_id in question_tag_map:
+                    tags = question_tag_map[q_id]
+                    score = getrank(a.Score,type)
+                    u = a.OwnerUserId
+                    for t in tags:
+                        if u in user_tag_map and t in user_tag_map[u]:
+                            user_tag_map[u][t][0] = user_tag_map[u][t][0] + score
+                            user_tag_map[u][t][1] = user_tag_map[u][t][1] + 1
+            print "user_tag_map end:" + str(num)
+
+
+            f = open(file, 'a')
+            for u in user_tag_map:
+                for t in user_tag_map[u]:
+                    score = 0.0
+                    if user_tag_map[u][t][1]>0:
+                        score = user_tag_map[u][t][0]/user_tag_map[u][t][1]
+                    f.write(str(u) + "," + str(t) + "," + str(score) + "\r\n")
+
+
+
+
+def get_percentile():
+    # 计算answer的score的百分位点
+    so_user_list = []
+    users = session2_r.query(So_Github_Users.so_user_id).all()
+    for u in users:
+        so_user_list.append(u.so_user_id)
+
+    answers = session2_r.query(So_Answers.Score).filter(So_Answers.OwnerUserId.in_(so_user_list)).all()
+    scorelist = []
+    for a in answers:
+        scorelist.append(a.Score)
+    scorelist.sort()
+
+    length = len(scorelist)
+    s = []
+    s.append(scorelist[0])
+    for i in range(1, 10):
+        s.append(scorelist[int(length / 10) * i])
+    s.append(scorelist[length - 1]+1)
+    print length
+    for i in range(len(s)):
+        print s[i],
+    print " "
+
+    k = 0
+    i = 0
+    while i <len(scorelist) and k <10:
+        if scorelist[i] < k:
+            i+=1
+        else:
+            print k,i
+            k+=1
+
+
+def getrank(score,type):
+    if type== 0:
+        score = (score+42)*10/(21403+42)
+        return score
+    elif type == 1:
+        if score<0:
+            return 0.05
+        elif score == 0:
+            return 2    #1,2,3
+        elif score == 1:
+            return 4.75     # 4,5,5.5
+        elif score == 2:
+            return 6.25  # 5.5,7
+        elif score == 3:
+            return 8  # 8
+        elif score>3 and score<7:
+            return 9  # 9
+        else:
+            return 10
+    elif type == 2:
+        score = (score+42)*10/(21403+42)
+        if score<=1:
+            return 1
+        elif score<=2:
+            return 2
+        elif score<=3:
+            return 3
+        elif score<=4:
+            return 4
+        elif score<=5:
+            return 5
+        elif score<=6:
+            return 6
+        elif score<=7:
+            return 7
+        elif score<=8:
+            return 8
+        elif score<=9:
+            return 9
+        elif score<=10:
+            return 10
+
+
+
+
+
+def main_do():
+    # get_percentile()
+    cache_file = "/sdpdata1/python/project/user_sort/user_sort/result/test/user_tag_cache_file.csv"
+
+    # score归一化为0到10的连续值
+    # file0 = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/so_0.csv"
+    # type = 0
+    # get_user_ability(cache_file, file0, type)
+
+    # score归一化为0到10的离散值
+    # file1 = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/so_1.csv"
+    # type = 1
+    # get_user_ability(cache_file, file1, type)
+
+    file1 = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/so_2.csv"
+    type = 2
+    get_user_ability(cache_file, file1, type)
+
+
+
+if __name__ == '__main__':
+    main_do()
