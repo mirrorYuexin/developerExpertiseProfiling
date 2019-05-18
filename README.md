@@ -27,11 +27,11 @@
 ### 2. Contribution-Based Developer Expertise Profiling: 
 >#### TCDEP in Stack Overflow: TCDEP_in_StackOverflow.py
 >#### TCDEP in GitHub: TCDEP_in_GitHub.py
->#### Contribution-Based Developer Expertise Profile: contribution-based_developer_expertise_profiling.py
+>#### Contribution-Based Developer Expertise Profile: contribution_based_developer_expertise_profiling.py
 
 ### 3. Graph-Based Developer Expertise: 
 >#### Developer network constructing: get_user_relation.py
->#### Expertise Profiling based on the Developer Network: topic-sentitive_pagerank.py 
+>#### Expertise Profiling based on the Developer Network: topic_sentitive_pagerank.py 
 
 ### 4. Baselines: 
 >#### Stack Overflow: 
