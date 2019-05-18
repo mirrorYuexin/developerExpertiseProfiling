@@ -134,8 +134,8 @@ def get_user_ability(indegreeFile, zscoreFile):
 
 
 def main_do():
-    indegreeFile = "/sdpdata1/python/project/user_sort/user_sort/result/Score_4.csv"
-    zscoreFile = "/sdpdata1/python/project/user_sort/user_sort/result/ScoreNor_4.csv"
+    indegreeFile = "indegree.csv"
+    zscoreFile = "zscore.csv"
     get_user_ability(indegreeFile, zscoreFile)
 
 if __name__ == '__main__':
