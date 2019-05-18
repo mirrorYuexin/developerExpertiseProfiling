@@ -155,7 +155,7 @@ def Generate_Restart_Vector(n, tag_id, node2index):
 
 def main_do():
 
-    alpha = 0.9
+    alpha = 0.1
     num_iter = 200
     threshold = 0.0000000001
     num_candidates = 10
@@ -185,11 +185,12 @@ def main_do():
     user_tag = get_user_tag(cache_file,0)
 
     filepath = "/sdpdata1/python/project/user_sort/user_sort/result/so_github/pagerank/final/result2/result"
-    for i in range(3):
-        for j in range(5):
-            file_temp = filepath + str(i) +"_" + str(j)+"_9.csv"
+    for i in range(11):
+        for j in range(10):
+            file_temp = filepath + str(i) +"_" + str(j)+".csv"
             print "***************************",file_temp,"***************************"
-            print a[i], b[i], j
+            alpha = j*0.1
+            print a[i], b[i], alpha
             f = open(file_temp, 'a')
             tagnum = 0
             time1 = time()
@@ -199,7 +200,7 @@ def main_do():
                 start = time()
                 tagnum += 1
                 v = p = Generate_Restart_Vector(N, tag_id, node2index)
-                G = Generate_Transfer_Matrix_Map(N, p, node2index, a[i], b[i], tag_id, j)
+                G = Generate_Transfer_Matrix_Map(N, p, node2index, a[i], b[i], tag_id)
                 M = Generate_Transfer_Matrix(G, N)
                 PageRank(M, alpha, v, p, num_iter, threshold, index2node, num_candidates, f, tag_id, user_tag)
                 end = time()
