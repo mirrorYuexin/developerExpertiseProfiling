@@ -173,7 +173,7 @@ def main_do():
     taglist = list(tag_set)
     print len(taglist)
 
-    filepath = "/sdpdata2/python/project/UserSort_ASE/data/baseline/so/expertise_rank/result_"
+    filepath = "expertise_rank_"
     for i in range(1,10):
         alpha = 0.1 * i
         file_temp = filepath +str(i)+".csv"
