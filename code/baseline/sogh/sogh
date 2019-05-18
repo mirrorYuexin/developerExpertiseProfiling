@@ -78,9 +78,9 @@ def main_do():
     #     print w1,w2,user_ability_file_temp
     #     get_user_ability_file(cache_file, so_file, github_file, user_ability_file_temp,w1,w2)
 
-    so_file = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/so_2.csv"
-    github_file = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/gh_2.csv"
-    user_ability_file = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/sogh_2_"
+    so_file = "so_2.csv"
+    github_file = "gh_2.csv"
+    user_ability_file = "/sdpdata1/python/project/user_sort/user_sort/HIN/baseline/seke/CDPScore_"
     for i in range(11):
 
         w1 = 0.1 * i
