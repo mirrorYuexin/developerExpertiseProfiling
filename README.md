@@ -35,14 +35,14 @@
 #### evaluate.py
 
 ### 5. Baselines: baseline in Section IV of paper
-#### Stack Overflow:so
-##### Indegree, Z_Score:indegreeAndZscore.py
-##### ExpertiseRank:expertise_rank.py
-##### Topic-Sensitive PageRank:topic_sensitive_pageRank.py
-#### GitHub:gh
-##### GDP:GDP.py
-#### across software communities:sogh
-##### CPDScorer:so.py,gh.py,sogh.py
+#### Stack Overflow: so
+##### Indegree, Z_Score: indegreeAndZscore.py
+##### ExpertiseRank: expertise_rank.py
+##### Topic-Sensitive PageRank: topic_sensitive_pageRank.py
+#### GitHub: gh
+##### GDP: GDP.py
+#### across software communities: sogh
+##### CPDScorer: so.py,gh.py,sogh.py
 
 
 
