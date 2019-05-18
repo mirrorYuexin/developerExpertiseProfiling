@@ -6,28 +6,27 @@ import random
 import pandas as pd
 import numpy as np
 from scipy.sparse import csc_matrix, csr_matrix
-
-from user_sort.my.get_test_result import get_user_tag
-from user_sort.mysql.session import Session1 as session1
-from user_sort.mysql.session import Session2_r as session2_r
-from user_sort.mysql.models import So_Github_Users, So_User_Relation, Github_User_Relation, So_User_Tag, User_Tag, Tags, \
-    So_Test_Question_Tag, So_Test2_Question_Tag, User_Tag_2, Github_User_Relation2, Github_User_Relation3, \
-    Github_User_Relation6, So_User_Relation2
+import os
+import cPickle as pickle
+from mysql.session import Session0_r as session0_r
+from mysql.session import Session1 as session1
+from mysql.session import Session2_r as session2_r
+from mysql.session import Session3_r as session3_r
+from mysql.models import So_Github_Users, So_User_Relation, User_Expertise_Baseline, Github_User_Relation1
 from time import time
 import copy
 
-'''S
-简单的topic-sensitice pagerank
-SMDT/Z_Score+问答关系开发者网络
+'''
+基于so对每个tag建立一个图，通过pagerank计算user的能力值。
 '''
 def Generate_Node_Index_Map():
     index2node = dict()
     node2index = dict()
-    users = session2_r.query(So_Github_Users.so_user_id).all()
+    users = session2_r.query(So_Github_Users.stackoverflow_id).all()
     n = 0
     for u in users:
-        node2index[u.so_user_id] = n
-        index2node[n] = u.so_user_id
+        node2index[u.stackoverflow_id] = n
+        index2node[n] = u.stackoverflow_id
         n += 1
     return n, node2index, index2node
 
@@ -56,7 +55,30 @@ def PageRank(M, alpha, v_temp, p_temp, num_iter, threshlod, index2node, num_cand
     # result = sorted(result.items(), key=lambda item: item[1], reverse=True)[:num_candidates]
     # return result
 
-
+def Generate_Random_Transfer_Matrix_Map(n):
+    '''
+    n :argument 点的个数
+    以map的形式返回构成的图
+    点为用户，边为有向边，从提问的用户指向回答的用户，权重为回答次数
+    map里必须包含所有的用户
+    :return:
+    '''
+    G = {'A': {'a': 1, 'c': 1},
+         'B': {'a': 1, 'b': 1, 'c': 1, 'd': 1},
+         'C': {'c': 1, 'd': 1},
+         'a': {'A': 1, 'B': 1},
+         'b': {'B': 1},
+         'c': {'A': 1, 'B': 1, 'C': 1},
+         'd': {'B': 1, 'C': 1}}
+    # G={}
+    # for i in range(n):
+    #     G[i]={}
+    #     # ramdomList = random.sample(range(0, n), 20)
+    #     # for j in ramdomList:
+    #     for j in range(i,i+20):
+    #         if j<n:
+    #             G[i][j]=1
+    return G
 
 
 def Generate_Transfer_Matrix_Map(N, node2index, tag_id):
@@ -67,7 +89,7 @@ def Generate_Transfer_Matrix_Map(N, node2index, tag_id):
         G[n] = {}
 
     #so
-    so_relation_result = session2_r.query(So_User_Relation).filter(So_User_Relation.tag == tag_id).all()
+    so_relation_result = session0_r.query(So_User_Relation).filter(So_User_Relation.tag == tag_id).all()
     for relation in so_relation_result:
         if relation.asker != relation.answerer:
             asker = node2index[relation.asker]
@@ -78,6 +100,8 @@ def Generate_Transfer_Matrix_Map(N, node2index, tag_id):
             else:
                 G[asker][answerer] = relation.weight
     return G
+
+
 
 def Generate_Transfer_Matrix(G, n):
     """generate transfer matrix given graph
@@ -128,20 +152,21 @@ def Generate_Restart_Vector(n, tag_id, node2index):
     """
     sum = 0
     v = np.zeros(n)
+    # 将所有用户的评价结果保存在So_User_Tag表中
     # SMDT
-    # result = session2_r.query(So_User_Tag.user_Id, So_User_Tag.SMDT2).filter(So_User_Tag.tag_Id == tag_id).all()
+    # result = session0_r.query(So_User_Tag.user_Id, So_User_Tag.SMDT2).filter(So_User_Tag.tag_Id == tag_id).all()
     # for r in result:
     #     if r.SMDT2 > 0:
     #         v[node2index[r.user_Id]] = r.SMDT2
     #         sum += r.SMDT2
 
     # Z_Score
-    result = session2_r.query(So_User_Tag.user_Id, So_User_Tag.Z_Score).filter(So_User_Tag.tag_Id == tag_id, So_User_Tag.Z_Score>0).all()
+    result = session0_r.query(User_Expertise_Baseline.user_Id, User_Expertise_Baseline.Z_Score).filter(
+        User_Expertise_Baseline.tag_Id == tag_id, User_Expertise_Baseline.Z_Score>0).all()
     for r in result:
         if r.Z_Score > 0:
             v[node2index[r.user_Id]] = r.Z_Score
             sum += r.Z_Score
-
     #归一化
     for i in range(0,n):
         v[i] = v[i]/sum
@@ -150,41 +175,27 @@ def Generate_Restart_Vector(n, tag_id, node2index):
 
 def main_do():
 
-    # print "#######################"+str(alpha)+"#######################"
-    alpha = 0.1
     num_iter = 200
     threshold = 0.0000000001
     num_candidates = 10
 
-
     # 得到需要计算能力的tag
-    tag_threshold = 5000
-    tagset = set()
-    tags = session1.query(Tags).filter(Tags.Count > tag_threshold).all()
-    for tag in tags:
-        tagset.add(tag.Id)
-
-    tagset1 = set()
-    tags = session2_r.query(So_Test_Question_Tag.tag_Id).distinct()
-    for tag in tags:
-        if tag.tag_Id in tagset:
-            tagset1.add(tag.tag_Id)
-    tags = session2_r.query(So_Test2_Question_Tag.tag_Id).distinct()
-    for tag in tags:
-        if tag.tag_Id in tagset:
-            tagset1.add(tag.tag_Id)
-    taglist = list(tagset1)
+    user_tag_map_cache = "/sdpdata2/python/project/UserSort_ASE/data/testdata/user_tag_map_cache.csv"
+    with open(user_tag_map_cache, 'r') as data:
+        user_tag_map = pickle.load(data)
+    tag_set = set()
+    for u in user_tag_map:
+        for t in user_tag_map[u]:
+            tag_set.add(t)
+    taglist = list(tag_set)
     print len(taglist)
 
-    cache_file = "/sdpdata1/python/project/user_sort/user_sort/result/test/user_tag_cache_file.csv"
-    user_tag = get_user_tag(cache_file,0)
-
-    filepath = "/sdpdata1/python/project/user_sort/user_sort/result/so/baseline/TSPR_ZScore_"
+    filepath = "topic_sensitive_pagerank_"
     for i in range(1,10):
-        alphatemp = alpha * i
-        file_temp = filepath + str(i) +".csv"
-        print alphatemp
+        alpha = 0.1 * i
+        file_temp = filepath +str(i)+".csv"
         print "***************************",file_temp,"***************************"
+        print alpha
         f = open(file_temp, 'a')
         tagnum = 0
         time1 = time()
@@ -193,15 +204,18 @@ def main_do():
             print "tag_id:"+str(tag_id)+" start!"
             start = time()
             tagnum += 1
-            v = p = Generate_Restart_Vector(N, tag_id, node2index)
-            G = Generate_Transfer_Matrix_Map(N, node2index,tag_id)
+            v = p = Generate_Restart_Vector(N)
+            G = Generate_Transfer_Matrix_Map(N, node2index, tag_id)
             M = Generate_Transfer_Matrix(G, N)
-            PageRank(M, alphatemp, v, p, num_iter, threshold, index2node, num_candidates, f, tag_id, user_tag)
+            PageRank(M, alpha, v, p, num_iter, threshold, index2node, num_candidates, f, tag_id, user_tag_map)
             end = time()
             print "第"+str(tagnum)+"个标签finish:"+str(end-start)+"s"
         f.close()
         time2 = time()
         print "totaltime:" + str(time2 - time1) + "s"
+
+
+
 if __name__ == '__main__':
     main_do()
 
