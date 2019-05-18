@@ -104,7 +104,7 @@ def get_user_ability(question_tag_map, question_difficulty_map, answers, k, tag_
                 num += 1
         session2_w.flush()
         session2_w.commit()
-    print "更新记录条数："+str(num)
+    print str(num)
 
 
 
