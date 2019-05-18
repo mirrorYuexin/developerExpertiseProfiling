@@ -10,12 +10,9 @@ from user_sort.mysql.session import Session2_r as session2_r
 from user_sort.mysql.models import Tags, So_Test_Question_Tag, Test2, So_Test2_Question_Tag, Test, Questions
 from time import time
 
-'''
-根据评价的结果，得到测试数据
-'''
+
 def get_testdata():
-    # 得到测试数据
-    # 得到问题数超过5000的tag
+
     tag_threshold = 5000
     tagset = set()
     tags = session1.query(Tags).filter(Tags.Count > tag_threshold).all()
@@ -29,7 +26,6 @@ def get_testdata():
     for q in questions:
         # question_tag_map[q.q_id] = []
         question_answer_map[q.q_id] = {}
-        # 查出问题对应的tag
         tags = session2_r.query(So_Test_Question_Tag.tag_Id).filter(So_Test_Question_Tag.q_Id == q.q_id).all()
         # tags = session2_r.query(So_Test2_Question_Tag.tag_Id).filter(So_Test2_Question_Tag.q_Id == q.q_id).all()
         for t in tags:
@@ -38,7 +34,7 @@ def get_testdata():
                     question_tag_map[q.q_id] = []
                 question_tag_map[q.q_id].append(t.tag_Id)
 
-        # 查出答案
+ 
         result = session2_r.query(Test.a_id, Test.a_owner_id, Test.groundScore, Test.groundRank, Test.SMDTScore).filter(
             Test.q_id == q.q_id, Test.selected == 1).all()
         # result = session2_r.query(Test2.a_id, Test2.a_owner_id, Test2.groundScore, Test2.groundRank, Test2.SMDTScore).filter(Test2.q_id == q.q_id, Test2.selected == 1).all()
@@ -51,23 +47,17 @@ def get_testdata():
     return question_tag_map, question_answer_map
 
 def get_final_accuracy(file, question_tag_map_temp, question_answer_map_temp, finaltestfile):
-    # 根据最终的测试数据，计算模型的准确度
-    # 查看具体的数据
-
-    # 先复制参数
+ 
     question_tag_map = copy.deepcopy(question_tag_map_temp)
     question_answer_map = copy.deepcopy(question_answer_map_temp)
     if os.path.exists(finaltestfile):
         with open(finaltestfile, 'r') as data:
             final_test_list = pickle.load(data)
 
-
-    # 读取文件中的用户能力信息，保存到user_tag_ability中
     user_tag_ability = {}
     f = open(file, 'r')
     num = 0
     for line in f.readlines():
-        # 三列，依次为user,tag,ability
         uta = line.split(',')
         user = int(uta[0])
         tag = int(uta[1])
@@ -94,8 +84,6 @@ def get_final_accuracy(file, question_tag_map_temp, question_answer_map_temp, fi
                 predscore += user_tag_ability[user][t]
             answer.append(predscore)
 
-
-        # 排序
         if answers[0][5]>answers[1][5]:
             accuracy+=1
     accuracy = accuracy / pairNum
@@ -110,23 +98,22 @@ def main_do():
     # so
     Indegree = "Indegree.csv"
     zscore = "Z_Score.csv"
-    simple_pagerank = "simple_pagerank.csv"
+    expertise_rank = "expertise_rank.csv"
+    topic_sensitive_pagerank = "topic_sensitive_pagerank.csv"
     get_final_accuracy(Indegree, question_tag_map, question_answer_map, test_data)
     get_final_accuracy(zscore, question_tag_map, question_answer_map, test_data)
-    get_final_accuracy(simple_pagerank, question_tag_map, question_answer_map, test_data)
+    get_final_accuracy(expertise_rank, question_tag_map, question_answer_map, test_data)
+    get_final_accuracy(topic_sensitive_pagerank, question_tag_map, question_answer_map, test_data)
 
-    TSPR_filepath = "TSPR_"
-    for i in range(1,10):
-        file_temp = TSPR_filepath + str(i) +".csv"
-        print i
-        get_final_accuracy(file_temp, question_tag_map, question_answer_map, test_data)
 
     # gh
     GDP = "GDP.csv"
-
+    get_final_accuracy(GDP, question_tag_map, question_answer_map, test_data)
+    
     #across communities
     CPDScore = "CDPScore.csv"
-
+    get_final_accuracy(CPDScore, question_tag_map, question_answer_map, test_data)
+    
     # our approach
     so_file = "so.csv"
     github_file = "gh.csv"
@@ -137,17 +124,8 @@ def main_do():
     get_final_accuracy(so_github_file, question_tag_map, question_answer_map, test_data)
     get_final_accuracy(profile_file, question_tag_map, question_answer_map, test_data)
 
-
-
-
-
-
-
-    model_without_dynamics_filepath = "/sdpdata1/python/project/user_sort/user_sort/result/so_github/no_dynamics/result_"
-    for i in range(1,10):
-        file_temp = model_without_dynamics_filepath + str(i) +".csv"
-        print i
-        get_final_accuracy(file_temp, question_tag_map, question_answer_map, test_data)
+    model_without_dynamics_filepath = "no_dynamics.csv"
+    get_final_accuracy(model_without_dynamics_filepath, question_tag_map, question_answer_map, test_data)
 
 if __name__ == '__main__':
     main_do()
