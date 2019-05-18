@@ -131,7 +131,7 @@ def get_user_ability(cache_file, file, project_tag_map, user_project_map, tagset
 
 
 def main_do():
-    cache_file = "/sdpdata1/python/project/user_sort/user_sort/result/test/user_tag_cache_file.csv"
+    cache_file = "GDP.csv"
     project_tag_map, user_project_map, tagset = get_map()
 
     file = "/sdpdata1/python/project/user_sort/user_sort/result/github/gh_baseline.csv"
