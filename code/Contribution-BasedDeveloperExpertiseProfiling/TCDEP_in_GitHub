@@ -51,7 +51,7 @@ def get_map():
         num += 1
     print "project_wtch_map end:" + str(num)
 
-    # 查出这些用户的commits
+
     commits_map = {}
     for u in user_map:
         u_gh = user_map[u]
@@ -110,8 +110,7 @@ def get_user_ability(project_tag_map, project_wtch_map, commits_map):
 def main_do():
     project_tag_map, project_wtch_map, commits_map = get_map()
     get_user_ability(project_tag_map, project_wtch_map, commits_map)
-
-    file = "/sdpdata1/python/project/user_sort/user_sort/result/github/CMW2_0.csv"
+    
 
 if __name__ == '__main__':
     main_do()
