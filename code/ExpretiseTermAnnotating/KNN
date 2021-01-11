@@ -1,0 +1,259 @@
+# coding:utf-8
+from __future__ import division
+
+import os
+import cPickle as pickle
+
+import math
+
+from pymongo import CursorType
+from KNN.get_tag.create_vocabulary import create_vocabulary
+from github.data_process.topic_to_tag import make_tag_map3, make_tag_map5
+from word3.mysql.session import Session2 as session2
+from word3.mysql.session import Session3_r as session_r
+from word3.mysql.models import QuestionTag, GithubProjectLanguageTag
+from github.mongodbConnection import collection0 as collection0
+from github.mongodbConnection import collection8 as collection8
+
+
+def make_question_set1(file_path):
+
+    if os.path.exists(file_path):
+        f_r = open(file_path, 'rb')
+        question_set = pickle.load(f_r)
+        f_r.close()
+        return question_set
+
+    question_set = set()
+    questions = session_r.query(QuestionTag.q_Id).filter(QuestionTag.new_tag_Id != -1).all()
+    for q in questions:
+        question_set.add(q.q_Id)
+
+    f_w = open(file_path, 'wb')
+    pickle.dump(question_set, f_w)
+    f_w.close()
+    return question_set
+
+def make_question_set2(taglist):
+
+    question_list = []
+    questions = session_r.query(QuestionTag.q_Id).filter(QuestionTag.tag_Id.in_(taglist)).distinct()
+    for q in questions:
+        question_list.append(q.q_Id)
+    question_set = set(question_list)
+    return question_set
+
+def text2vec_and_get_related_question_id(text,vocabulary_word2index,D,question_set):
+
+    text = text.split(" ")
+    vec={}
+    related_question_id = set()
+    wordnum=0
+    for word in text:
+        if word in vocabulary_word2index:
+            wordnum += 1
+            if word in vec:
+                vec[word] = vec[word] +1
+            else:
+                vec[word] = 1
+                temp=set(vocabulary_word2index[word][2])
+                related_question_id = related_question_id | temp
+    vec2 = {}
+    for word in vec:
+        vec2[vocabulary_word2index[word][0]] = vec[word]/wordnum * math.log10(D/vocabulary_word2index[word][1])
+
+    related_question_id2 = set()
+    for q in related_question_id:
+        if q in question_set:
+            related_question_id2.add(q)
+    return vec2,related_question_id2
+
+
+def get_similarity(vec1,b,vec2):
+
+    a=0
+    for word in vec1:
+        if word in vec2:
+            a += vec1[word] * vec2[word]
+    return a/b
+
+
+def get_topn_similar_question(vec, related_question_id, n, collection):
+
+    if len(related_question_id) == 0:
+        return []
+    topn={}
+    vec_module=0
+    for word in vec:
+        value = vec[word]
+        vec_module += value * value
+    try:
+        related_question_id = list(related_question_id)
+        related_question_id_num = len(related_question_id)
+        while related_question_id_num > 200000:
+            related_question_id_temp = related_question_id[:200000]
+            related_question_id = related_question_id[200000:]
+            related_question_id_num = related_question_id_num-200000
+            qt_result = collection.find({"id": {"$in": related_question_id_temp}}, {"id" :1, "vector_serialization":1, "vec_module":1, "_id":0}, no_cursor_timeout = True, cursor_type = CursorType.EXHAUST)
+            for qt in qt_result:
+                id = qt["id"]
+                qt_vec = pickle.loads(str(qt["vector_serialization"]))
+                qt_vec_module = qt["vec_module"]
+
+                b = (vec_module * qt_vec_module)**0.5
+                sim = get_similarity(vec,b,qt_vec)
+                if len(topn)<n:
+                    topn[id] = sim
+                    if len(topn)==n:
+                        topn = sorted(topn.items(), key=lambda item: item[1])
+                elif topn[0][1] < sim:
+                    index = 0
+                    while index < n and topn[index][1] < sim:
+                        index+=1
+                    topn.insert(index,(id,sim))
+                    del topn[0]
+            if len(topn)<n:
+                topn = sorted(topn.items(), key=lambda item: item[1])
+        if related_question_id_num > 0:
+            qt_result = collection.find({"id": {"$in": related_question_id}},
+                                         {"id": 1, "vector_serialization": 1, "vec_module":1,"_id": 0}, no_cursor_timeout=True,
+                                         cursor_type=CursorType.EXHAUST)
+            for qt in qt_result:
+                id = qt["id"]
+                qt_vec = pickle.loads(str(qt["vector_serialization"]))
+                qt_vec_module = qt["vec_module"]
+                b = (vec_module * qt_vec_module) ** 0.5
+                sim = get_similarity(vec, b, qt_vec)
+                if len(topn) < n:
+                    topn[id] = sim
+                    if len(topn) == n:
+                        topn = sorted(topn.items(), key=lambda item: item[1])
+                elif topn[0][1] < sim:
+                    index = 0
+                    while index < n and topn[index][1] < sim:
+                        index += 1
+                    topn.insert(index, (id, sim))
+                    del topn[0]
+            if len(topn) < n:
+                topn = sorted(topn.items(), key=lambda item: item[1])
+    except Exception as e:
+        print 'some errors happened in get_top20_similar_question'
+    finally:
+        pass
+    top = []
+    for i in topn:
+        top.append(i[0])
+    return top
+
+def gettag(topn, minweight, taglist):
+    if len(topn) == 0:
+        return []
+    tag_set = set(taglist)
+    tags={}
+    try:
+        results = session_r.query(QuestionTag.tag_Id).filter(QuestionTag.q_Id.in_(topn)).all()
+        for result in results:
+            tag = result.tag_Id
+            if tag in tag_set:
+                if tag in tags:
+                    tags[tag] +=1
+                else:
+                    tags[tag] = 1
+    except Exception as e:
+        print 'some errors happened in gettag'
+    finally:
+        pass
+    tags1={tag:tags[tag] for tag in tags if tags[tag] >= minweight}
+    tags = sorted(tags1.items(),key=lambda item:item[1],reverse = True)
+    return tags[:10]
+
+def text_to_tag(text, name_id_map, tags):
+    for length in range(1,6):
+        tag_map = make_tag_map5(length, name_id_map)
+        if len(tag_map) > 0:
+            for i in range(len(text)+1-length):
+                word = text[i]
+                for j in range(i+1,i+length):
+                    word = word+"-"+text[j]
+                word = word.lower()
+                tag_id = tag_map.get(word, -1)
+                if tag_id != -1:
+                    tags[tag_id] = 11
+    return tags
+
+def get_language_tag(taglist):
+    lang_tag_map = {}
+    project_language_tag = session2.query(GithubProjectLanguageTag.project_id, GithubProjectLanguageTag.tag_id).filter(GithubProjectLanguageTag.tag_id.in_(taglist)).all()
+    for pt in project_language_tag:
+        if pt.project_id in lang_tag_map:
+            lang_tag_map[pt.project_id].add(pt.tag_id)
+        else:
+            lang_tag_map[pt.project_id] = set([pt.tag_id])
+    return lang_tag_map
+
+def get_tag_thread(vocabulary_word2index, D, name_id_map, question_set, taglist, collection1, collection2, lang_tag_map, min_id, max_id, filepath, threadanme):
+    cursor = collection1.find({"id": {"$gte": min_id, "$lt": max_id}},
+                              {"id": 1, "topic": 1,"language": 1, "name_word": 1, "description_word": 1,"readme_word":1,
+                               "_id": 0}, no_cursor_timeout=True)
+    print threadanme, collection1.find().count()
+    num = 0
+    f = open(filepath, 'w+')
+    for project in cursor:
+        num += 1
+        tags0 = {}
+        id = project["id"]
+        text = project["name_word"]
+        if "topic" in project:
+            topics = project["topic"]
+            for topic in topics:
+                topic = topic.lower()
+                tag_id = name_id_map.get(topic, -1)
+                if tag_id != -1:
+                    tags0[tag_id] = 11
+                else:
+                    text = text + " " +topic
+        if "language" in project:
+            language = project["language"].lower()
+            tag_id = name_id_map.get(language, -1)
+            if tag_id != -1:
+                tags0[tag_id] = 11
+            else:
+                text = text+ " " +language
+        if "description_word" in project:
+            text = text + " " + project["description_word"]
+        elif "readme_word" in project:
+            text = text + " " + project["readme_word"]
+        text2=text.split(" ")
+        tags0 = text_to_tag(text2, name_id_map,tags0)
+        if id in lang_tag_map:
+            for t in lang_tag_map[id]:
+                tags0[t] = 11
+
+        vec, related_question_id = text2vec_and_get_related_question_id(text, vocabulary_word2index, D, question_set)
+        topn = get_topn_similar_question(vec, related_question_id, 10, collection2)
+        tags1 = gettag(topn, 2, taglist)
+
+        tags = {}
+        for tag in tags1:
+            tags[tag[0]] = tag[1]
+        for tag in tags0:
+            tags[tag] = tags0[tag]
+        tags = sorted(tags.items(), key=lambda item: item[1], reverse = True)[:10]
+        for tag in tags:
+            f.write(str(id)+","+str(tag[0])+","+str(tag[1])+"\r\n")
+        if num % 1000 == 0:
+            print threadanme,num
+            f.flush()
+    f.close()
+    print num
+    print threadanme+" done!"
+
+def main_do():
+    threshold=5000
+    vocabulary_word2index, D = create_vocabulary("/sdpdata2/python/project/KNN/source/vocabulary_small/voabulary_small_5000.txt","/sdpdata2/python/project/KNN/source/vocabulary_small/voabulary_small_5000.txt", "/sdpdata2/python/project/KNN/source/qid_set.txt",2,5000)
+    taglist,name_id_map = make_tag_map3(threshold)
+    question_set = make_question_set2(taglist)
+    lang_tag_map = get_language_tag(taglist)
+    get_tag_thread(vocabulary_word2index, D, name_id_map, question_set, taglist, collection0, collection8, lang_tag_map, 0, 45200000, "/sdpdata2/python/project/KNN/KNN/prediction/my_project_tag10.csv", "thread10")
+if __name__ == '__main__':
+    main_do()

@@ -1,0 +1,116 @@
+# coding:utf-8
+from __future__ import division
+
+import os
+import cPickle as pickle
+
+import datetime
+from sqlalchemy import func
+from user_sort.mysql.models import So_User_Tag, So_Question_Difficulty, So_QuestionTag, Answers, So_Answers, Tags, \
+    So_Github_Users, Github_ProjectTag, Github_Commits, GithubProject, Github_User_Tag
+from user_sort.mysql.session import Session2_r as session2_r
+from user_sort.mysql.session import Session2_w as session2_w
+from user_sort.mysql.session import Session1 as session1
+
+
+def get_map():
+
+    user_map={}
+    users = session2_r.query(So_Github_Users).all()
+    for u in users:
+        user_map[u.so_user_id] = u.github_user_id
+
+    project_tag_map = {}
+    start_id = 0
+    end_id = 50000
+    final_id = 45200000
+    step = 50000
+    num = 0
+    while start_id < final_id:
+        print "start_id:" + str(start_id) + "     end_id:" + str(end_id) + "     final_id:" + str(final_id)
+        pt_result = session2_r.query(Github_ProjectTag.project_id, Github_ProjectTag.tag_id).filter(
+            Github_ProjectTag.project_id >= start_id, Github_ProjectTag.project_id < end_id).all()
+        for pt in pt_result:
+            num += 1
+            p = pt.project_id
+            if p in project_tag_map:
+                project_tag_map[p].add(pt.tag_id)
+            else:
+                project_tag_map[p] = set([pt.tag_id])
+        start_id = end_id
+        end_id = end_id + step
+    print num
+
+
+    project_wtch_map = {}
+    projects = session2_r.query(GithubProject.id, GithubProject.watcherNum).filter(
+        GithubProject.commitNum > 0).all()
+    num = 0
+    for p in projects:
+        project_wtch_map[p.id] = p.watcherNum+1
+        num += 1
+    print "project_wtch_map end:" + str(num)
+
+
+    commits_map = {}
+    for u in user_map:
+        u_gh = user_map[u]
+        commits_map[u] = {}
+        commits = session2_r.query(Github_Commits.project_id, func.count(Github_Commits.id)).filter(
+            Github_Commits.author_id == u_gh).group_by(Github_Commits.project_id).all()
+        for c in commits:
+            commits_map[u][c[0]] = c[1]
+
+    return project_tag_map, project_wtch_map, commits_map
+
+
+def get_user_ability(project_tag_map, project_wtch_map, commits_map):
+    user_tag_map={}
+    num = 0
+    for u in commits_map:
+        for p in commits_map[u]:
+            if p in project_tag_map:
+                tags = project_tag_map[p]
+                commitnum = commits_map[u][p]
+                cmw_temp = commitnum * project_wtch_map[p]
+                for t in tags:
+                    if u in user_tag_map:
+                        if t in user_tag_map[u]:
+                            user_tag_map[u][t]= user_tag_map[u][t] + cmw_temp
+                        else:
+                            user_tag_map[u][t] = cmw_temp
+                            num += 1
+                    else:
+                        user_tag_map[u] = {}
+                        user_tag_map[u][t] = cmw_temp
+                        num += 1
+    print "user_tag_map end:" + str(num)
+
+    num = 0
+    for u in user_tag_map:
+        for t in user_tag_map[u]:
+            num += 1
+            github_user_tag = Github_User_Tag()
+            github_user_tag.user_Id = u
+            github_user_tag.tag_Id = t
+            github_user_tag.score = user_tag_map[u][t]
+            session2_w.add(github_user_tag)
+            if num % 100000 == 0:
+                session2_w.commit()
+                print num
+    if num % 100000 != 0:
+        session2_w.commit()
+        print num
+    print num
+
+
+
+
+
+def main_do():
+    project_tag_map, project_wtch_map, commits_map = get_map()
+    get_user_ability(project_tag_map, project_wtch_map, commits_map)
+    
+
+if __name__ == '__main__':
+    main_do()

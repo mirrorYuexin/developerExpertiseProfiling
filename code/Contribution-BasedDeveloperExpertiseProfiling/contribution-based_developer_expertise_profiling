@@ -1,0 +1,79 @@
+# coding:utf-8
+from __future__ import division
+
+import os
+import cPickle as pickle
+
+import datetime
+
+import math
+
+from user_sort.mysql.models import So_User_Tag, So_Question_Difficulty, So_QuestionTag, Answers, So_Answers, \
+    So_Github_Users, Github_User_Tag, Tags, User_Tag_2
+from user_sort.mysql.session import Session2_r as session2_r
+from user_sort.mysql.session import Session2_w as session2_w
+from user_sort.mysql.session import Session1 as session1
+
+
+def combine(w1,w2):
+
+    tag_threshold = 5000
+    tag_set = set()
+    tags = session1.query(Tags).filter(Tags.Count > tag_threshold).all()
+    for t in tags:
+        tag_set.add(t.Id)
+
+    user_tag_ability = {}
+
+    github_max = 260
+    github_min = 0
+
+    so_max = 1
+    so_min = 0
+
+
+    # so
+    ut_result = session2_r.query(So_User_Tag.user_Id, So_User_Tag.tag_Id, So_User_Tag.SMDT2).all()
+    for ut in ut_result:
+        user = ut.user_Id
+        tag = ut.tag_Id
+        ability = ut.SMDT2
+        if tag in tag_set and ability!=0:
+            if user not in user_tag_ability:
+                user_tag_ability[user] = {}
+            user_tag_ability[user][tag] = 100 * w1 * (ability - so_min)/( so_max - so_min )
+
+    # github
+    ut_result = session2_r.query(Github_User_Tag.user_Id, Github_User_Tag.tag_Id, Github_User_Tag.score).all()
+    for ut in ut_result:
+        user = ut.user_Id
+        tag = ut.tag_Id
+        ability = ut.score
+        if user not in user_tag_ability:
+            user_tag_ability[user] = {}
+        if tag not in user_tag_ability[user]:
+            user_tag_ability[user][tag] = 0
+        user_tag_ability[user][tag] += 100 * w2 * (ability - github_min)/( github_max - github_min )
+
+    num = 0
+    for u in user_tag_ability:
+        for t in user_tag_ability[u]:
+            num += 1
+            user_tag = User_Tag_2()
+            user_tag.user_Id = u
+            user_tag.tag_Id = t
+            user_tag.score = user_tag_ability[u][t]
+            session2_w.add(user_tag)
+            if num % 100000 == 0:
+                session2_w.commit()
+                print num
+    if num % 100000 != 0:
+        session2_w.commit()
+        print num
+    print num
+
+
+def main_do():
+    combine(0.5,0.5)
+if __name__ == '__main__':
+    main_do()
