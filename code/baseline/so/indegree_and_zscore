@@ -1,0 +1,142 @@
+# coding:utf-8
+from __future__ import division
+import math
+import os
+import cPickle as pickle
+
+import datetime
+
+from mysql.models import So_Github_Users, Tags, Question_Tag, Answers, Questions, User_Expertise_Baseline
+from mysql.session import Session0_r as session0_r
+from mysql.session import Session0_w as session0_w
+from mysql.session import Session2_r as session2_r
+
+'''
+indgree和Z_Score
+'''
+def get_user_ability(indegreeFile, zscoreFile):
+    """
+    计算indgree和Z_Score，并存入数据库
+    """
+
+    # user集合
+    user_set = set()
+    users = session2_r.query(So_Github_Users.stackoverflow_id).all()
+    for u in users:
+        user_set.add(u.stackoverflow_id)
+    user_list = list(user_set)
+    print len(user_list)
+
+    # tag集合
+    tag_set = set()
+    tags = session0_r.query(Tags).all()
+    for t in tags:
+        tag_set.add(t.Id)
+    tag_list = list(tag_set)
+    print len(tag_list)
+
+    # 查出问题和对应的tag，存入question_tag_map
+    question_tag_map = {}
+    start_id = 0
+    end_id = 5000000
+    final_id = 48000000
+    step = 5000000
+    num = 0
+    while start_id < final_id:
+        print "start_id:" + str(start_id) + "     end_id:" + str(end_id) + "     final_id:" + str(final_id)
+        qt_result = session0_r.query(Question_Tag).filter(Question_Tag.QuestionId >= start_id, Question_Tag.QuestionId < end_id).all()
+        for qt in qt_result:
+            num += 1
+            q = qt.QuestionId
+            if qt.TagId in tag_set:
+                if q in question_tag_map:
+                    question_tag_map[q].add(qt.TagId)
+                else:
+                    question_tag_map[q] = set([qt.TagId])
+        start_id = end_id
+        end_id = end_id + step
+    print "question_tag_map end:" + str(num)
+
+    # 查出所有被接受的答案，存入question_acceptedanswer_set
+    question_acceptedanswer_set = {}
+    questions = session0_r.query(Questions.AcceptedAnswerId).all()
+    for q in questions:
+        if q.AcceptedAnswerId!=-1:
+            question_acceptedanswer_set.add(q.AcceptedAnswerId)
+    print len(question_acceptedanswer_set)
+
+
+    # user_tag_map格式为{user：{tag:[最优回答数、回答数、提问数]}}
+    user_tag_map = {}
+
+    # 统计用户在每个标签下的最优答案数和答案数
+    answers = session0_r.query(Answers.Id, Answers.ParentId, Answers.OwnerUserId).filter(Answers.OwnerUserId.in_(user_list)).all()
+    for a in answers:
+        if a.ParentId in question_tag_map:
+            tags = question_tag_map[a.ParentId]
+            u = a.OwnerUserId
+            for t in tags:
+                if u not in user_tag_map:
+                    user_tag_map[u] = {}
+                if t not in user_tag_map[u]:
+                    user_tag_map[u][t] = [0, 0, 0]
+                if a.Id in question_acceptedanswer_set:
+                    user_tag_map[u][t][0] += 1
+                user_tag_map[u][t][1] += 1
+
+    # 统计用户在每个标签下的问题数
+    questions = session0_r.query(Questions.Id, Questions.OwnerUserId).filter(Questions.OwnerUserId.in_(user_list)).all()
+    for q in questions:
+        if q.Id in question_tag_map:
+            tags = question_tag_map[q.Id]
+            u = q.OwnerUserId
+            for t in tags:
+                if u not in user_tag_map:
+                    user_tag_map[u] = {}
+                if t not in user_tag_map[u]:
+                    user_tag_map[u][t] = [0, 0, 0]
+                user_tag_map[u][t][2] += 1
+
+    # 计算用户在每个标签下的Z_Score并将结果存入数据库和文件中
+    user_tag_map_cache = "/sdpdata2/python/project/UserSort_ASE/data/testdata/user_tag_map_cache.csv"
+    f1 = open(indegreeFile, 'a')
+    f2 = open(zscoreFile, 'a')
+    num = 0
+    for u in user_tag_map:
+        for t in user_tag_map[u]:
+            # 计算Z_Score
+            Z_Score = (user_tag_map[u][t][1] - user_tag_map[u][t][2]) / math.sqrt(
+                user_tag_map[u][t][1] + user_tag_map[u][t][2])
+            # 存入文件中
+            if u in user_tag_map_cache and t in user_tag_map_cache[u]:
+                f1.write(str(u) + "," + str(t) + "," + str(user_tag_map[u][t][0]) + "\r\n")
+                f2.write(str(u) + "," + str(t) + "," + str(Z_Score) + "\r\n")
+            # 存入数据库中
+            num += 1
+            user_expertise = User_Expertise_Baseline()
+            user_expertise.user_Id = u
+            user_expertise.tag_Id = t
+            user_expertise.indegree = user_tag_map[u][t][0]
+            user_expertise.answerNum = user_tag_map[u][t][1]
+            user_expertise.questionNum = user_tag_map[u][t][2]
+            user_expertise.Z_Score = Z_Score
+            session0_w.add(user_expertise)
+            if num % 100000 == 0:
+                session0_w.commit()
+                print num
+    if num % 100000 != 0:
+        session0_w.commit()
+        print num
+    print "更新记录条数：" + str(num)
+
+
+
+
+
+def main_do():
+    indegreeFile = "indegree.csv"
+    zscoreFile = "zscore.csv"
+    get_user_ability(indegreeFile, zscoreFile)
+
+if __name__ == '__main__':
+    main_do()

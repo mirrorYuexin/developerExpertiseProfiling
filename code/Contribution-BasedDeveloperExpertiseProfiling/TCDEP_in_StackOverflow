@@ -1,0 +1,120 @@
+# coding:utf-8
+from __future__ import division
+
+import os
+import cPickle as pickle
+
+import datetime
+
+from user_sort.mysql.models import So_User_Tag, So_Question_Difficulty, So_QuestionTag, Answers, So_Answers, Tags, \
+    So_Github_Users
+from user_sort.mysql.session import Session2_r as session2_r
+from user_sort.mysql.session import Session2_w as session2_w
+from user_sort.mysql.session import Session1 as session1
+
+
+def get_map():
+
+    user_set = set()
+    users = session2_r.query(So_Github_Users.so_user_id).all()
+    for u in users:
+        user_set.add(u.so_user_id)
+
+
+    question_tag_map = {}
+    tag_set = set()
+    start_id = 0
+    end_id = 500000
+    final_id = 40000000
+    step = 500000
+    num = 0
+    while start_id < final_id:
+        print "start_id:" + str(start_id) + "     end_id:" + str(end_id) + "     final_id:" + str(final_id)
+        qt_result = session2_r.query(So_QuestionTag).filter(So_QuestionTag.q_Id >= start_id,
+                                                            So_QuestionTag.q_Id < end_id).all()
+        for qt in qt_result:
+            num += 1
+            q = qt.q_Id
+            if q in question_tag_map:
+                question_tag_map[q].add(qt.tag_Id)
+            else:
+                question_tag_map[q] = set([qt.tag_Id])
+            tag_set.add(qt.tag_Id)
+        start_id = end_id
+        end_id = end_id + step
+    print "question_tag_map end:" + str(num)
+    print "tag_set end:" + str(len(tag_set))
+
+
+
+    question_difficulty_map = {}
+    questions = session2_r.query(So_Question_Difficulty.Id, So_Question_Difficulty.answerNumberNor, So_Question_Difficulty.acceptedAnswererReputationNor).filter(
+        So_Question_Difficulty.answerNumber != 0).all()
+    num = 0
+    for q in questions:
+        d1 = q.answerNumberNor
+        d2 = q.acceptedAnswererReputationNor
+        d3 = (d1 + d2) / 2
+        question_difficulty_map[q.Id] = d3
+        num += 1
+    print "question_difficulty_map end:" + str(num)
+
+
+    user_list = list(user_set)
+    answers = session2_r.query(So_Answers.ParentId, So_Answers.Score, So_Answers.OwnerUserId,
+                               So_Answers.CreationDate).filter(So_Answers.OwnerUserId.in_(user_list)).all()
+    return question_tag_map, question_difficulty_map, answers, tag_set
+
+
+
+
+
+def get_user_ability(question_tag_map, question_difficulty_map, answers, k, tag_set):
+    user_tag_map = {}
+    endtime = datetime.date(2016, 9, 8)
+    num = 0
+    for a in answers:
+        num += 1
+        q_id = a.ParentId
+        if q_id in question_tag_map:
+            tags = question_tag_map[q_id]
+            score = a.Score
+            u = a.OwnerUserId
+            difficulty = question_difficulty_map[q_id]
+            timefactor = 1 + int((endtime - a.CreationDate.date()).days / k)
+            sdmt2_temp = score * difficulty / timefactor
+            for t in tags:
+                if u in user_tag_map:
+                    if t in user_tag_map[u]:
+                        user_tag_map[u][t] += sdmt2_temp
+                    else:
+                        user_tag_map[u][t] = sdmt2_temp
+                else:
+                    user_tag_map[u] = {}
+                    user_tag_map[u][t] = sdmt2_temp
+    print "user_tag_map end:" + str(num)
+
+    num = 0
+    for t in tag_set:
+        ut = session2_w.query(So_User_Tag).filter(So_User_Tag.tag_Id == t).all()
+        for a in ut:
+            u = a.user_Id
+            if u in user_tag_map and t in user_tag_map[u]:
+                a.SMDT2 = user_tag_map[u][t]
+                num += 1
+        session2_w.flush()
+        session2_w.commit()
+    print str(num)
+
+
+
+
+
+def main_do():
+    question_tag_map, question_difficulty_map, answers, tag_set = get_map()
+    time = 360
+    get_user_ability(question_tag_map, question_difficulty_map, answers, time, tag_set)
+
+
+if __name__ == '__main__':
+    main_do()
